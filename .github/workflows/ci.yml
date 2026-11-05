@@ -23,7 +23,7 @@ jobs:
         working-directory: backend
         run: |
           python -c "import langchain, langchain_core, langchain_openai, langgraph, langsmith; print('langchain-imports-ok')"
-          python -c "from app.core import graph; from app.core.agents import AgentRuntime, AGENT_TOOLS; from app.services import syndrome_service; from app.api import clinical; print('app-imports-ok')"
+          python -c "from app.core import graph; from app.core.graph import AgentRuntime, AGENT_TOOLS; from app.services import syndrome_service; from app.api import clinical; print('app-imports-ok')"
 
       - name: Offline unit tests
         working-directory: backend
