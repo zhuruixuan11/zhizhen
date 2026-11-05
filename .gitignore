@@ -1,0 +1,67 @@
+# ============================================================
+# 知诊 · Zhizhen Git Ignore
+# ============================================================
+
+# ── 敏感信息（绝不能进仓库） ──
+.env
+.env.local
+.env.production
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+*.whl
+.eggs/
+pip-wheel-metadata/
+
+# ── Node / 前端 ──
+node_modules/
+dist/
+*.local
+.vite/
+npm-debug.log*
+
+# ── 数据（本地生成、绝不能进仓库） ──
+uploads/
+backend/uploads/
+backend/data/
+*.db
+*.sqlite*
+*.ldb
+*.mmap
+
+# ── 进程 / 锁文件 ──
+*.pid
+*.sock
+celerybeat.pid
+celerybeat-schedule
+
+# ── 日志 ──
+*.log
+logs/
+
+# ── IDE ──
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ── Docker 本地数据卷 ──
+docker-compose.override.yml
+
+# ── 测试产物 ──
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.tox/
+.ruff_cache/
+
+# ── 构建 / 临时 ──
+*.tar.gz
+*.zip
+.cache/

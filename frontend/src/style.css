@@ -1,0 +1,265 @@
+/* ============================================================
+   知诊 · 全局主题
+   朱砂红 + 墨绿 + 暖米白 · 中医雅致风
+   ============================================================ */
+
+:root {
+  /* 背景层：暖米白 → 宣纸质感 */
+  --tcm-bg: #faf6f1;
+  --tcm-bg-soft: #fdfaf6;
+  --tcm-panel: #f5efe6;
+  --tcm-card: #ffffff;
+  --tcm-border: #d4c9bb;
+  --tcm-border-soft: #e8dfd2;
+  /* 品牌色：朱砂红为主、墨绿为辅、琥珀金点缀 */
+  --tcm-primary: #a63d40;
+  --tcm-primary-deep: #8b2635;
+  --tcm-accent: #2f5233;
+  --tcm-gold: #c8963a;
+  /* 语义色 */
+  --tcm-success: #2f5233;
+  --tcm-warning: #c8963a;
+  --tcm-danger: #a63d40;
+  /* 文字 */
+  --tcm-text: #1c1c1c;
+  --tcm-text-dim: #5c5c5c;
+  --tcm-text-faint: #8a8a8a;
+  /* 形态 */
+  --tcm-radius: 12px;
+  --tcm-shadow: 0 4px 20px rgba(28, 28, 28, 0.05);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--tcm-bg);
+  color: var(--tcm-text);
+  font-family: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', -apple-system, BlinkMacSystemFont,
+    'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-size: 14px;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+.app-shell {
+  background:
+    radial-gradient(1200px 600px at 15% -10%, rgba(166, 61, 64, 0.08), transparent 60%),
+    radial-gradient(1000px 500px at 100% 0%, rgba(200, 150, 58, 0.07), transparent 55%),
+    var(--tcm-bg);
+  min-height: 100vh;
+}
+
+.app-main {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 32px 32px 60px;
+}
+
+/* Element Plus 主题变量对齐 */
+:root {
+  --el-color-primary: #a63d40;
+  --el-color-primary-light-3: #c0686a;
+  --el-color-primary-light-5: #d49093;
+  --el-color-primary-light-7: #e7b8bb;
+  --el-color-primary-light-8: #f0d0d2;
+  --el-color-primary-light-9: #faeaea;
+  --el-color-primary-dark-2: #8b2635;
+  --el-bg-color: #f5efe6;
+  --el-bg-color-page: #faf6f1;
+  --el-bg-color-overlay: #f5efe6;
+  --el-text-color-primary: #1c1c1c;
+  --el-text-color-regular: #3d3d3d;
+  --el-text-color-secondary: #5c5c5c;
+  --el-border-color: #d4c9bb;
+  --el-border-color-light: #d4c9bb;
+  --el-border-color-lighter: #e8dfd2;
+  --el-fill-color: #ffffff;
+  --el-fill-color-light: #faeaea;
+  --el-fill-color-lighter: #e8dfd2;
+  --el-fill-color-blank: #fdfaf6;
+  --el-mask-color: rgba(255, 255, 255, 0.8);
+}
+
+/* 通用卡片 */
+.tcm-card {
+  background: var(--tcm-card);
+  border: 1px solid var(--tcm-border-soft);
+  border-radius: var(--tcm-radius);
+  padding: 20px;
+  box-shadow: var(--tcm-shadow);
+}
+
+.tcm-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--tcm-text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+.tcm-subtitle {
+  color: var(--tcm-text-dim);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.tcm-accent {
+  color: var(--tcm-accent);
+}
+
+.tcm-gold {
+  color: var(--tcm-gold);
+}
+
+.tcm-primary {
+  color: var(--tcm-primary);
+}
+
+.tcm-divider {
+  height: 1px;
+  background: var(--tcm-border-soft);
+  margin: 20px 0;
+}
+
+/* 按钮与文案 */
+a {
+  color: var(--tcm-primary);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--tcm-primary-deep);
+}
+
+/* Element Plus 细节微调 */
+.el-card {
+  --el-card-bg-color: var(--tcm-card);
+  border: 1px solid var(--tcm-border-soft) !important;
+  background: var(--tcm-card) !important;
+}
+
+.el-table {
+  --el-table-bg-color: var(--tcm-card);
+  --el-table-tr-bg-color: var(--tcm-card);
+  --el-table-header-bg-color: var(--tcm-panel);
+  --el-table-border-color: var(--tcm-border-soft);
+  --el-table-row-hover-bg-color: #faeaea;
+}
+
+.el-dialog {
+  --el-dialog-bg-color: var(--tcm-panel);
+  border: 1px solid var(--tcm-border);
+  border-radius: var(--tcm-radius);
+}
+
+.el-drawer {
+  --el-drawer-bg-color: var(--tcm-panel);
+}
+
+.el-message-box {
+  --el-bg-color-overlay: var(--tcm-panel);
+  border: 1px solid var(--tcm-border);
+}
+
+.el-input__wrapper,
+.el-textarea__inner {
+  background-color: var(--tcm-bg-soft) !important;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .app-main {
+    padding: 16px 12px 48px;
+  }
+  .tcm-card {
+    padding: 16px;
+  }
+}
+
+/* Markdown 内容样式 */
+.markdown-body {
+  line-height: 1.7;
+  word-break: break-word;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3 {
+  color: var(--tcm-text);
+  margin: 12px 0 8px;
+}
+
+.markdown-body h3 {
+  font-size: 16px;
+}
+
+.markdown-body p {
+  margin: 8px 0;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 20px;
+  margin: 8px 0;
+}
+
+.markdown-body li {
+  margin: 4px 0;
+}
+
+.markdown-body code {
+  background: var(--tcm-bg-soft);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.markdown-body strong {
+  color: var(--tcm-gold);
+}
+/* Shared workspace layout and accessible controls */
+:root { color-scheme: light; --el-border-radius-base: 8px; }
+.app-shell { background: var(--tcm-bg); }
+h1, h2, h3 { letter-spacing: -.02em; }
+h1 { font-size: 26px; font-weight: 650; }
+.page-heading { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-bottom: 24px; flex-wrap: wrap; }
+.page-heading h1, .page-heading h2 { margin: 0 0 8px; }
+.page-heading p { margin: 0; color: var(--tcm-text-dim); line-height: 1.7; }
+.eyebrow { display: block; margin-bottom: 8px; font-size: 11px; letter-spacing: .14em; font-weight: 700; color: var(--tcm-primary); }
+.workspace-panel { padding: 24px; border: 1px solid var(--tcm-border-soft); background: white; border-radius: 12px; }
+.workspace-toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 20px 0; }
+.workspace-toolbar .el-input { width: min(100%, 320px); }
+.workspace-toolbar .el-select { width: 190px; }
+.metric-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 20px 0; }
+.metric-card { border: 1px solid var(--tcm-border-soft); border-radius: 12px; background: white; padding: 20px 24px; }
+.metric-card span { font-size: 13px; color: var(--tcm-text-dim); }
+.metric-card strong { display: block; font-size: 30px; margin-top: 10px; font-variant-numeric: tabular-nums; color: var(--tcm-text); }
+.el-button { min-height: 36px; font-weight: 500; }
+.el-button--large { min-height: 42px; }
+.el-card { border-radius: 12px; }
+.el-table th.el-table__cell { font-weight: 600; height: 48px; }
+.el-table td.el-table__cell { padding: 16px 0; }
+.el-input__wrapper { min-height: 38px; }
+.el-textarea__inner { line-height: 1.8; padding: 12px 14px; }
+:focus-visible { outline: 3px solid #c0686a; outline-offset: 3px; }
+.el-pagination { margin-top: 24px; justify-content: flex-end; flex-wrap: wrap; }
+.el-dialog { max-width: calc(100vw - 32px); }
+@media (max-width: 768px) {
+  .app-main { padding: 20px 14px 40px; }
+  .metric-grid { gap: 8px; }
+  .metric-card { padding: 14px 12px; }
+  .metric-card strong { font-size: 24px; }
+  .workspace-panel { padding: 16px; }
+  .workspace-toolbar .el-input, .workspace-toolbar .el-select { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
