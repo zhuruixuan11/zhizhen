@@ -20,7 +20,7 @@ class ImageUploadTests(unittest.TestCase):
                 patch.object(consultation.image_analysis_service, "precheck_image", return_value=(True, "ok")), \
                 patch.object(consultation.image_analysis_service, "normalize_image", return_value=b"test"), \
                 patch.object(consultation.audit_service, "record"), \
-                patch("app.tasks.jobs.analyze_image_task.delay", side_effect=dispatch_error) as dispatch:
+                patch("app.tasks.jobs.analyze_image_task.apply_async", side_effect=dispatch_error) as dispatch:
             try:
                 result = consultation.upload_image(1, "tongue", UploadFile(file=io.BytesIO(b"test")),
                                                    SimpleNamespace(user_id=1), db)

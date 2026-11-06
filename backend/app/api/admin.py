@@ -1,5 +1,6 @@
 """管理后台路由（role=ADMIN）：审计日志、图谱统计/导入、提示词版本、评测。"""
 import logging
+from datetime import datetime
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -35,6 +36,16 @@ logger = logging.getLogger("app.admin")
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
 
+def _mark_job_failed(db: Session, job_id: str, error: str) -> None:
+    """任务未能投递到队列时，把占位 job 标记为失败，避免前端一直转圈。"""
+    job = db.get(AsyncJob, job_id)
+    if job is not None:
+        job.status = "failed"
+        job.error = error
+        job.finish_time = datetime.now()
+        db.commit()
+
+
 @router.get("/graph/stats", response_model=GraphStats)
 def graph_stats(db: Session = Depends(get_db)):
     return GraphStats(**knowledge_service.stats())
@@ -46,9 +57,12 @@ def graph_import(db: Session = Depends(get_db)):
     db.add(AsyncJob(job_id=job_id, job_type="graph_import", status="pending", progress=0,
                     params={}, trace_id=get_trace_id()))
     db.commit()
+    from app.tasks.celery_app import dispatch
     from app.tasks.jobs import graph_import_task
 
-    graph_import_task.delay(job_id=job_id)
+    if not dispatch(graph_import_task, job_id=job_id):
+        _mark_job_failed(db, job_id, "任务队列暂不可用，请稍后重试")
+        raise HTTPException(status_code=503, detail="任务队列暂不可用，请稍后重试")
     return {"job_id": job_id}
 
 
@@ -58,9 +72,12 @@ def vector_rebuild(db: Session = Depends(get_db)):
     db.add(AsyncJob(job_id=job_id, job_type="vector_rebuild", status="pending", progress=0,
                     params={}, trace_id=get_trace_id()))
     db.commit()
+    from app.tasks.celery_app import dispatch
     from app.tasks.jobs import vector_rebuild_task
 
-    vector_rebuild_task.delay(job_id=job_id)
+    if not dispatch(vector_rebuild_task, job_id=job_id):
+        _mark_job_failed(db, job_id, "任务队列暂不可用，请稍后重试")
+        raise HTTPException(status_code=503, detail="任务队列暂不可用，请稍后重试")
     return {"job_id": job_id}
 
 

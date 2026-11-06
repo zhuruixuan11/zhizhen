@@ -381,12 +381,11 @@ def _run_syndrome_and_persist(
         syndrome=analysis.syndrome,
     )
 
-    # 异步重算用户画像（最终一致性；Celery worker 不在时静默降级）
-    try:
-        from app.tasks.jobs import rebuild_user_profile
-        rebuild_user_profile.delay(session.user_id)
-    except Exception:  # noqa: BLE001
-        logger.info("rebuild_user_profile not dispatched (celery unavailable)")
+    # 异步重算用户画像（最终一致性；Redis/Celery 不在时 2 秒内降级返回，不拖慢问诊）
+    from app.tasks.celery_app import dispatch
+    from app.tasks.jobs import rebuild_user_profile
+    if not dispatch(rebuild_user_profile, session.user_id):
+        logger.info("rebuild_user_profile not dispatched (celery/redis unavailable)")
 
     from app.services.report_review_service import patient_result
     pending = patient_result(db, analysis)

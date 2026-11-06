@@ -1,7 +1,8 @@
 """认证与数据权利路由。"""
+from datetime import datetime
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -74,9 +75,17 @@ def export_data(user: User = Depends(get_current_user), db: Session = Depends(ge
     db.add(AsyncJob(job_id=job_id, job_type="export", status="pending", progress=0,
                     params={}, trace_id=get_trace_id()))
     db.commit()
+    from app.tasks.celery_app import dispatch
     from app.tasks.jobs import export_task
 
-    export_task.delay(job_id=job_id, user_id=user.user_id)
+    if not dispatch(export_task, job_id=job_id, user_id=user.user_id):
+        job = db.get(AsyncJob, job_id)
+        if job is not None:
+            job.status = "failed"
+            job.error = "任务队列暂不可用，请稍后重试"
+            job.finish_time = datetime.now()
+            db.commit()
+        raise HTTPException(status_code=503, detail="任务队列暂不可用，请稍后重试")
     audit_service.record(db, "export", "user", str(user.user_id))
     return {"job_id": job_id}
 

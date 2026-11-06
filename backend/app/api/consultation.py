@@ -141,13 +141,12 @@ def upload_image(
                     params={"image_id": image.image_id, "session_id": session_id}, trace_id=get_trace_id()))
     db.commit()
 
+    from app.tasks.celery_app import dispatch
     from app.tasks.jobs import analyze_image_task
 
-    try:
-        analyze_image_task.delay(job_id=job_id, image_id=image.image_id,
-                                 image_path=file_path, image_type=image_type, session_id=session_id)
-    except Exception:
-        logger.exception("image_task_dispatch_failed job_id=%s", job_id)
+    if not dispatch(analyze_image_task, job_id=job_id, image_id=image.image_id,
+                    image_path=file_path, image_type=image_type, session_id=session_id):
+        logger.warning("image_task_dispatch_failed job_id=%s", job_id)
         job = db.get(AsyncJob, job_id)
         job.status = "failed"
         job.error = "识别任务提交失败，请稍后重试"

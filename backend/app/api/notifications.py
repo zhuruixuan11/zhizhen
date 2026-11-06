@@ -66,6 +66,10 @@ async def subscribe_notifications(
                     last_ping = time.time()
         except asyncio.CancelledError:
             pass
+        except Exception as e:  # noqa: BLE001
+            # Redis 不可达时连接超时已被压到 2 秒，这里给出明确事件再断开，避免前端一直空白
+            logger.warning("notify.subscribe_failed error=%s", type(e).__name__)
+            yield f"event: error\ndata: {{\"message\": \"通知服务暂不可用\"}}\n\n"
         finally:
             try:
                 await pubsub.unsubscribe(channel)
