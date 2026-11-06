@@ -210,3 +210,41 @@ export function getEvalRuns(): Promise<EvalRun[]> {
 export function healthz(): Promise<{ status: string }> {
   return http.get<{ status: string }>('/healthz').then((r) => r.data)
 }
+
+// ---------------- 分享 & 导出 ----------------
+export interface ShareLinkResponse {
+  token: string
+  expires_hours: number
+  expires_at: string
+  analysis_id: number
+}
+
+export function createShareLink(sessionId: number, hours = 168): Promise<ShareLinkResponse> {
+  return http
+    .post<ShareLinkResponse>(`/consultation/${sessionId}/share`, null, { params: { hours } })
+    .then((r) => r.data)
+}
+
+export function getShareReport(token: string): Promise<SyndromeReport> {
+  return http.get<SyndromeReport>(`/consultation/public/share/${token}`).then((r) => r.data)
+}
+
+/** 触发浏览器下载（PDF 或 JSON）。调用后端 /export?fmt=xxx，返回 Blob 下载。 */
+export async function exportReport(sessionId: number, fmt: 'json' | 'pdf' = 'json'): Promise<void> {
+  const r = await http.get(`/consultation/${sessionId}/export`, {
+    params: { fmt },
+    responseType: 'blob',
+  })
+  const blob = r.data as unknown as Blob
+  const disposition = (r.headers as Record<string, string>)['content-disposition'] ?? ''
+  const match = disposition.match(/filename="?([^"]+)"?/)
+  const filename = match?.[1] ?? `zhizhen-report-${sessionId}.${fmt}`
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}

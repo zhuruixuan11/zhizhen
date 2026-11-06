@@ -267,14 +267,14 @@ def export_report(
     if fmt == "pdf":
         pdf = export_service.export_pdf(payload)
         if pdf is None:
-            # 降级为 JSON 下载，带 warning 头
+            # 降级为 JSON 下载（weasyprint 未安装或渲染失败）
             body = export_service.export_json(payload)
             return Response(
                 content=body,
                 media_type="application/json",
                 headers={
                     "Content-Disposition": f'attachment; filename="zhizhen-report-{session_id}.json"',
-                    "X-Export-Warning": "PDF 不可用（weasyprint 未安装），已降级为 JSON",
+                    "X-Export-Warning": "PDF unavailable (weasyprint not installed), falling back to JSON",
                 },
             )
         return Response(

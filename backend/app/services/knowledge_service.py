@@ -351,7 +351,7 @@ def graphrag_retrieve(symptoms: list[str], syndrome_hint: Optional[str], embeddi
 
     result["available"] = bool(result["syndromes"] or result["formulas"])
     result["knowledge_text"] = _build_knowledge_text(result)
-    return result
+    return _json_properties(result)
 
 
 def _build_knowledge_text(result: dict) -> str:

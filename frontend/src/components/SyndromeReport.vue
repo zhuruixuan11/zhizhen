@@ -1,15 +1,64 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { SyndromeReport } from '@/types'
+import { ElMessage } from 'element-plus'
+import { ArrowDown, DocumentCopy } from '@element-plus/icons-vue'
 import GraphRefCard from './GraphRefCard.vue'
 import KnowledgeGraphView from './KnowledgeGraphView.vue'
 import DisclaimerBar from './DisclaimerBar.vue'
+import { createShareLink, exportReport } from '@/api/modules'
 
 const showGraph = ref(false)
+const shareDialog = ref(false)
+const shareUrl = ref('')
+const shareExpires = ref('')
+const shareLoading = ref(false)
+const exportLoading = ref<'json' | 'pdf' | null>(null)
 
 const props = defineProps<{
   report: SyndromeReport
+  sessionId?: number
 }>()
+
+const hasSession = computed(() => props.sessionId != null)
+
+async function openShare() {
+  if (!props.sessionId) return
+  shareLoading.value = true
+  try {
+    const data = await createShareLink(props.sessionId)
+    const origin = window.location.origin
+    shareUrl.value = `${origin}/share/${data.token}`
+    shareExpires.value = data.expires_at
+    shareDialog.value = true
+  } catch {
+    // 错误由 http 拦截器统一提示
+  } finally {
+    shareLoading.value = false
+  }
+}
+
+async function copyShareUrl() {
+  try {
+    await navigator.clipboard.writeText(shareUrl.value)
+    ElMessage.success('已复制到剪贴板')
+  } catch {
+    ElMessage.error('复制失败，请手动复制')
+  }
+}
+
+async function doExport(fmt: 'json' | 'pdf') {
+  if (!props.sessionId) return
+  exportLoading.value = fmt
+  try {
+    await exportReport(props.sessionId, fmt)
+    ElMessage.success(`报告已导出为 ${fmt.toUpperCase()}`)
+  } catch {
+    // 错误由拦截器提示
+  } finally {
+    exportLoading.value = null
+  }
+}
 
 const riskText: Record<string, string> = {
   low: '低风险',
@@ -74,6 +123,29 @@ function weightPercent(weight: number): string {
             置信度 {{ confidencePercent }}%
           </el-tag>
         </div>
+      </div>
+
+      <!-- 操作栏：分享 / 导出 -->
+      <div v-if="hasSession" class="action-bar">
+        <el-button type="primary" :loading="shareLoading" @click="openShare">
+          🔗 分享报告
+        </el-button>
+        <el-dropdown trigger="click" @command="doExport" :disabled="exportLoading !== null">
+          <el-button :loading="exportLoading !== null">
+            📥 导出报告
+            <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="json">
+                <span>导出 JSON</span>
+              </el-dropdown-item>
+              <el-dropdown-item command="pdf">
+                <span>导出 PDF</span>
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
 
       <section class="report-section">
@@ -174,6 +246,36 @@ function weightPercent(weight: number): string {
     <div class="report-disclaimer">
       <DisclaimerBar :text="report.disclaimer || undefined" />
     </div>
+
+    <!-- 分享弹窗 -->
+    <el-dialog
+      v-model="shareDialog"
+      title="分享辨证报告"
+      width="480px"
+      :close-on-click-modal="false"
+    >
+      <div class="share-content">
+        <p class="share-tip">复制以下链接发送给亲友或医生，对方可查看您的辨证报告（无需登录）。</p>
+        <el-input
+          v-model="shareUrl"
+          readonly
+          size="large"
+        >
+          <template #append>
+            <el-button :icon="DocumentCopy" @click="copyShareUrl">复制</el-button>
+          </template>
+        </el-input>
+        <p class="share-expire">
+          🔒 链接有效期至 <strong>{{ shareExpires }}</strong>，过期后需重新生成。
+        </p>
+      </div>
+      <template #footer>
+        <el-button @click="shareDialog = false">关闭</el-button>
+        <el-button type="primary" :icon="DocumentCopy" @click="copyShareUrl">
+          复制链接
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -363,5 +465,42 @@ function weightPercent(weight: number): string {
 
 .report-disclaimer {
   padding-top: 4px;
+}
+
+.action-bar {
+  display: flex;
+  gap: 12px;
+  padding: 12px 20px;
+  background: var(--tcm-card);
+  border: 1px solid var(--tcm-border-soft);
+  border-radius: var(--tcm-radius);
+  flex-wrap: wrap;
+}
+
+.action-bar .el-button {
+  min-width: 120px;
+}
+
+.share-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.share-tip {
+  margin: 0;
+  color: var(--tcm-text-dim);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.share-expire {
+  margin: 0;
+  font-size: 12px;
+  color: var(--tcm-text-faint);
+}
+
+.share-expire strong {
+  color: var(--tcm-primary);
 }
 </style>

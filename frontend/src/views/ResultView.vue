@@ -140,7 +140,7 @@ async function doFeedback() {
     </div>
 
     <div v-loading="loading" class="result-body">
-      <SyndromeReport v-if="report" :report="report" />
+      <SyndromeReport v-if="report" :report="report" :session-id="sessionId" />
       <el-alert v-if="report?.review_status === 'confirmed'" title="此报告已由医生修改并确认" type="success" :closable="false" />
 
       <section v-else-if="pending && !loading" class="review-wait workspace-panel">
