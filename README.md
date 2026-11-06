@@ -19,10 +19,10 @@
 
 | 特性 | 代码里的实现 |
 |---|---|
-| 🧠 **LangGraph 三节点 StateGraph** | `retrieve → differentiate → recommend`，`DiagnosisState` TypedDict，链路可回放、可插拔。问诊和审方在图外骨架层 |
-| 📚 **Neo4j 图谱定证型 + Milvus 向量补位** | 图检索沿 `MANIFESTS` 关系按症状命中数排序取 top5，名称去重后取 top3 证型；向量 `top_k=3` 仅补图检索未覆盖的节点，最终再次去重。两套通道互补、不相互加权 |
+| 🧠 **LangGraph StateGraph + 条件边 + Checkpointer** | 线性三节点 `retrieve → differentiate → recommend`；可选 `inquiry` 节点 + `add_conditional_edges` 按 `DiagnosisState.inquiry_ready` 路由；`MemorySaver` Checkpointer 让同 session_id 断了能续 |
+| 📚 **Neo4j + Milvus 真 RRF 融合排序** | 图谱沿 `MANIFESTS` 按症状命中数排 rank，向量按 cosine 排 rank，独立算 `1/(60+rank)` 加权求和取 top3 证型；不再硬编码图谱优先 bias。方剂/中药继续用向量 `top_k=3` 补位 |
 | 🛡️ **三层安全护栏** | `safety_service.check_input` 屏蔽 prompt injection / 非医疗内容；`safety_service.check_output` 拦截确定性诊断措辞、处方剂量；急危重症（胸痛/呼吸困难/意识障碍/自伤倾向）由 `consultation_service._handle_emergency` 短路，直接返回急救指南、终止问诊 |
-| 💬 **SSE 流式问诊 + 槽位驱动** | 后端用 `StreamingResponse` 以 `text/event-stream` 逐 chunk yield，前端用 `fetch + ReadableStream` 消费；每轮 LLM 回复按槽位追问 1~2 个具体问题，渐进式收集四诊信息 |
+| 💬 **SSE 流式问诊 + 槽位驱动 + Pydantic 兜底校验** | 后端 `StreamingResponse(text/event-stream)` 逐 chunk yield，前端 `fetch + ReadableStream` 消费；每轮 LLM 回复按槽位追问 1~2 个具体问题。流式 chunk 收齐后必须过 Pydantic schema（`InquiryResponse` / `SyndromeStepOutput` / `TreatmentStepOutput`）校验才落库 |
 | 🧾 **长短时记忆** | `agent_memory` 表分短（本次会话槽位快照）长（跨会话健康画像）两层，下次问诊从 DB 恢复槽位，画像在每次辨证落库后由 Celery 异步重算 |
 | 👁️ **多模态望诊** | DashScope 视觉模型识别舌象/面色，`vision_service` 对低置信度结果返回结构化 `uncertain: true`，不强行推断 |
 | 👨‍⚕️ **医患双端 + 人工审核** | 患者提交报告草稿 → 辨证落库后 `notification_service.publish_case_new` 经 Redis pub/sub 发布 → 医生端订阅 `/api/v1/notify/stream` SSE 实时收到 |
@@ -63,13 +63,14 @@
 ```
 用户输入 ──▶ [输入护栏] ──▶ 问诊骨架层（consultation_service._chat_turn）
                                 │
-                    流式槽位追问（LangGraph 外）
+                    流式槽位追问（LangGraph 外，条件边框架已就绪）
                                 │
                                 ▼
                         [输出护栏]
                                 │
                                 ▼
-                LangGraph StateGraph（3 节点）
+                    LangGraph StateGraph（条件边 + Checkpointer）
+                    inquiry_ready? → retrieve / END
                     retrieve → differentiate → recommend
                                 │
                                 ▼
@@ -181,9 +182,10 @@ python -m unittest discover -s tests -v
 
 | 模块 | 文件 | 职责 |
 |---|---|---|
-| LangGraph 三节点编排 | `backend/app/core/graph.py` | `StateGraph(retrieve → differentiate → recommend)` + `DiagnosisState` TypedDict |
-| 问诊主链路 | `backend/app/services/consultation_service.py` | 流式问诊骨架（`_chat_turn` 105 行）+ 安全护栏 + 辨证落库 |
-| 图谱优先 + 向量补位 | `backend/app/services/knowledge_service.py::graphrag_retrieve` | Neo4j `MANIFESTS` 命中数排序取 top3 证型；Milvus `top_k=3` 补位；名称去重 |
+| LangGraph StateGraph + 条件边 + Checkpointer | `backend/app/core/graph.py` | `DiagnosisState` TypedDict + 可选 inquiry 节点 + `add_conditional_edges` + MemorySaver 持久化 |
+| 问诊主链路 + Pydantic 兜底校验 | `backend/app/services/consultation_service.py` | 流式问诊骨架（`_chat_turn` 105 行）+ `InquiryResponse` schema 校验 + 安全护栏 + 辨证落库 |
+| **真 RRF 融合** | `backend/app/services/knowledge_service.py::graphrag_retrieve` | Neo4j 图谱 rank + Milvus 向量 rank → `_rrf(k=60)` 加权求和取 top3 证型 |
+| 辨证论治三节点 | `backend/app/services/syndrome_service.py` | `_syndrome_step`（`SyndromeStepOutput` 校验）+ `_treatment_step`（`TreatmentStepOutput` 校验）+ LangGraph `invoke` |
 | 系统提示词热更新 | `backend/app/services/prompt_service.py` | `prompt_version` 表驱动，含 `inquiry_system` scene |
 | 分享链接 | `backend/app/services/share_service.py` | HMAC-SHA256 签名 token + `/consultation/public/share/{token}` 公开端点 |
 | 医生端 SSE 通知 | `backend/app/services/notification_service.py` + `api/notifications.py` | Redis pub/sub + `/notify/stream` |

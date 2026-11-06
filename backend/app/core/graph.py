@@ -3,9 +3,11 @@
 - ``BoundedToolExecutor`` 是唯一的有界工具调用原语：构造时按 agent 各自声明的白名单
   与独立调用预算绑定，运行时只查自身状态；并记录 OpenTelemetry span 与 Prometheus 指标。
   它取代原先的 AgentRuntime，供图节点与 inquiry 流式追问使用。
-- ``build_diagnosis_graph`` 用 LangGraph 的 StateGraph 把 syndrome→care 的多节点
-  诊断链路建模为共享状态的图：状态在 retrieve/differentiate/recommend 节点间传递，
-  图本身无环（有界），真正进入 LangChain/LangGraph 1.x 的编排体系。
+- ``build_diagnosis_graph`` 用 LangGraph 的 StateGraph 把 diagnosis 链路建模为共享状态的图：
+  - 默认线性三节点：retrieve → differentiate → recommend
+  - 可选 inquiry 节点 + 条件边：问诊产出 inquiry_ready → 路由到 retrieve（进辨证）或 END（骨架层继续下一轮）
+  - 支持 MemorySaver Checkpointer：同 session_id 断了能续（LangGraph 强制 thread_id）
+  - 图本身无环（有界），真正进入 LangChain/LangGraph 1.x 的编排体系。
 
 三个专职智能体与工具白名单保持不变：
   inquiry  -> load_memory / save_memory / extract_symptoms / ask
@@ -102,20 +104,33 @@ class BoundedToolExecutor:
 class DiagnosisState(TypedDict, total=False):
     """diagnosis 图共享状态：各节点读取前序节点写入的字段并在节点间传递。"""
 
+    # ── 上下文依赖（不进 Checkpointer）──
     db: Any
+
+    # ── 问诊层 ──
     complaint: str
     symptoms: list[str]
-    inquiry: dict
+    inquiry: dict                    # 当前问诊槽位快照
+    slots: dict                      # 同上（字段别名，兼容不同调用路径）
+    inquiry_ready: bool               # 槽位是否足够进入辨证（条件边路由依据）
     patient_messages: list[str]
     recognitions: list[dict]
     risk: str
+
+    # ── 图检索层 ──
     embedding: Optional[list[float]]
     kg: dict
+
+    # ── 辨证层 ──
     syndrome: Optional[str]
     evidence: list
     differential: list
     confidence: Optional[float]
+
+    # ── 论治层 ──
     treatment: dict
+
+    # ── 审计 ──
     tool_calls: Annotated[int, add]
 
 
@@ -156,20 +171,40 @@ def build_diagnosis_graph(
     differentiate: Callable[[dict], dict],
     recommend: Callable[[dict], dict],
     checkpointer=None,
+    inquiry: Optional[Callable[[dict], dict]] = None,
 ):
-    """构建 syndrome→care 的有界诊断图；节点函数由调用方注入以复用其模块级依赖。
+    """构建 diagnosis 有界诊断图。
 
-    传入 checkpointer（如 langgraph.checkpoint.memory.MemorySaver）可实现状态持久化：
-    图中途抛异常（LLM timeout），下次同 thread_id 调用从断点恢复。
-    不传则退化为一次性执行（兼容旧调用）。
+    节点函数由调用方注入以复用其模块级依赖。
+
+    可选 inquiry 节点（问诊）：若提供，则图变为条件边分叉——
+    inquiry 节点产出 inquiry_ready 标志，条件边判断后路由到 retrieve（进辨证）
+    或 END（问诊未完成，由上层骨架层继续驱动下一轮）。
+
+    不传 inquiry → 保持线性三节点（retrieve → differentiate → recommend）。
+
+    checkpointer 传入 MemorySaver 等可实现状态持久化（同 session_id 断了能续）。
     """
     g = StateGraph(DiagnosisState)
     g.add_node("retrieve", retrieve)
     g.add_node("differentiate", differentiate)
     g.add_node("recommend", recommend)
-    g.add_edge(START, "retrieve")
+
+    if inquiry is not None:
+        g.add_node("inquiry", inquiry)
+
+        def _route_after_inquiry(state: dict) -> str:
+            """条件边：问诊是否完成 → retrieve 还是 END。"""
+            return "retrieve" if state.get("inquiry_ready") else END
+
+        g.add_edge(START, "inquiry")
+        g.add_conditional_edges("inquiry", _route_after_inquiry)
+    else:
+        g.add_edge(START, "retrieve")
+
     g.add_edge("retrieve", "differentiate")
     g.add_edge("differentiate", "recommend")
     g.add_edge("recommend", END)
+
     kwargs = {"checkpointer": checkpointer} if checkpointer is not None else {}
     return g.compile(**kwargs)
