@@ -6,13 +6,17 @@
 """
 import json
 import logging
+import os
 import time
 from typing import Any, Optional
 
 from sqlalchemy.orm import Session
 
 from app.core import graph, llm
-from app.schemas.schemas import EvidenceItem, FormulaSuggestion, GraphRef, SyndromeReport
+from app.schemas.schemas import (
+    EvidenceItem, FormulaSuggestion, GraphRef,
+    SyndromeReport, SyndromeStepOutput, TreatmentStepOutput,
+)
 from app.services import knowledge_service, prompt_service
 
 logger = logging.getLogger("app.syndrome")
@@ -111,19 +115,20 @@ def _syndrome_step(db: Session, complaint: str, symptoms: list[str], recognition
         raw = llm.invoke_text(messages, scene="syndrome")
         data = _parse_json(raw)
         if not isinstance(data, dict) or "syndrome" not in data:
-            raise ValueError("invalid syndrome response")
-        if data["syndrome"] is not None and (not isinstance(data["syndrome"], str) or not data["syndrome"].strip()):
-            raise ValueError("invalid syndrome name")
-        confidence = data.get("confidence")
-        if confidence is not None:
-            confidence = float(confidence)
-            if not 0 <= confidence <= 1:
-                raise ValueError("invalid confidence")
+            raise ValueError("invalid syndrome response (missing syndrome key)")
+        # Schema 级兜底校验：字段完整 + 类型正确 + confidence 在 [0,1]
+        try:
+            parsed = SyndromeStepOutput.model_validate(data)
+        except Exception as ve:  # noqa: BLE001
+            raise ValueError(f"syndrome schema validation failed: {ve}") from ve
+        syndrome = parsed.syndrome
+        if syndrome is not None and not syndrome.strip():
+            raise ValueError("invalid syndrome name (empty string)")
         return (
-            data.get("syndrome"),
-            data.get("evidence", []),
-            data.get("differential", []),
-            confidence if data["syndrome"] else None,
+            syndrome,
+            parsed.evidence,
+            parsed.differential,
+            parsed.confidence if syndrome else None,
         )
     except Exception as e:  # noqa: BLE001
         logger.warning("syndrome_analysis_unavailable error_type=%s", type(e).__name__)
@@ -141,7 +146,14 @@ def _treatment_step(db: Session, syndrome: Optional[str], kg: dict) -> dict:
     ]
     try:
         raw = llm.invoke_text(messages, scene="treatment")
-        return _parse_json(raw)
+        data = _parse_json(raw)
+        if isinstance(data, dict):
+            try:
+                parsed = TreatmentStepOutput.model_validate(data)
+                return parsed.model_dump()
+            except Exception as ve:  # noqa: BLE001
+                logger.warning("treatment schema validation failed, fallback to knowledge: %s", ve)
+        # fallback：图检索结果直接拼
     except Exception as e:  # noqa: BLE001
         logger.warning("treatment LLM failed, fallback: %s", e)
         formulas = []
@@ -208,8 +220,18 @@ _compiled = None
 def _diagnosis_graph():
     global _compiled
     if _compiled is None:
+        # MemorySaver Checkpointer：图中途异常（LLM timeout）时，下次同 session_id 调用从最后一个成功节点继续。
+        # 生产环境默认开启；测试/开发环境可通过 DISABLE_CHECKPOINTER=1 关闭（避免 Mock 对象序列化问题）。
+        checkpointer = None
+        if os.environ.get("DISABLE_CHECKPOINTER", "0") != "1":
+            try:
+                from langgraph.checkpoint.memory import MemorySaver
+                checkpointer = MemorySaver()
+            except Exception:  # noqa: BLE001
+                logger.info("MemorySaver unavailable, graph runs stateless")
         _compiled = graph.build_diagnosis_graph(
             retrieve=_retrieve_node, differentiate=_differentiate_node, recommend=_recommend_node,
+            checkpointer=checkpointer,
         )
     return _compiled
 
@@ -225,15 +247,48 @@ def analyze(db: Session, context: dict, complaint: str, runtime=None) -> dict:
     recognitions = context.get("recognitions", [])
     risk = context.get("risk_level", "low")
 
-    final = _diagnosis_graph().invoke({
-        "db": db,
+    # session_id 作为 LangGraph Checkpointer 的 thread_id：同一会话断了能续
+    # 若 MemorySaver 启用，则 thread_id 必须有（LangGraph 强制要求）
+    session_id = (
+        context.get("session_id")
+        or complaint[:32]
+        or f"anon-{abs(hash(json.dumps(symptoms, default=str))) % 1000000}"
+    )
+    graph_instance = _diagnosis_graph()
+
+    # state 构造：db 单独处理（SQLAlchemy session 不可序列化，不进 Checkpointer）
+    state: dict[str, Any] = {
         "complaint": complaint,
         "symptoms": symptoms,
         "recognitions": recognitions,
         "inquiry": context.get("inquiry", {}),
         "patient_messages": context.get("patient_messages", []),
         "risk": risk,
-    })
+    }
+    state["db"] = db
+
+    invoke_kwargs: dict[str, Any] = {}
+    if getattr(graph_instance, "checkpointer", None) is not None:
+        # MemorySaver 存在 → LangGraph 强制要求 thread_id
+        invoke_kwargs["config"] = {"configurable": {"thread_id": str(session_id)}}
+
+    try:
+        final = graph_instance.invoke(state, **invoke_kwargs)
+    except TypeError as te:
+        # MemorySaver 序列化 state 里的 Mock/db 失败 → 降级：重建无 checkpointer 的 graph
+        if "msgpack serializable" in str(te).lower() or "serializable" in str(te).lower():
+            logger.warning("checkpointer serialization failed, fallback stateless graph: %s", te)
+            global _compiled
+            # 重建 graph（stateless）
+            _compiled = graph.build_diagnosis_graph(
+                retrieve=_retrieve_node, differentiate=_differentiate_node, recommend=_recommend_node,
+            )
+            final = _compiled.invoke(state)
+        else:
+            raise
+
+    # 确保 db 不泄漏回 state
+    final.pop("db", None)
 
     syndrome = final.get("syndrome")
     kg = final.get("kg") or {}

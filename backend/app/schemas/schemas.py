@@ -106,6 +106,35 @@ class JobOut(BaseModel):
     trace_id: Optional[str] = None
 
 
+# ---------------- LLM 结构化输出（schema 级校验，流式 JSON 收齐后兜底） ----------------
+class InquiryResponse(BaseModel):
+    """问诊 LLM 的结构化 JSON 输出。
+
+    LLM 流式 chunk 全部收齐后，用此 model 校验字段完整性与类型。
+    校验失败则抛 ValidationError，由上层捕获并走规则降级。
+    """
+    reply: str = Field(min_length=1, max_length=4000)
+    slots: dict[str, Any] = Field(default_factory=dict)
+    ready: bool = False
+
+
+class SyndromeStepOutput(BaseModel):
+    """辨证 LLM 的结构化 JSON 输出。"""
+    syndrome: Optional[str] = None
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    evidence: list[dict[str, Any]] = Field(default_factory=list)
+    differential: list[str] = Field(default_factory=list)
+
+
+class TreatmentStepOutput(BaseModel):
+    """论治 LLM 的结构化 JSON 输出。"""
+    treatment_principle: Optional[str] = None
+    formula_suggestions: list[dict[str, Any]] = Field(default_factory=list)
+    diet_advice: list[str] = Field(default_factory=list)
+    acupoint_advice: list[str] = Field(default_factory=list)
+    lifestyle_advice: list[str] = Field(default_factory=list)
+
+
 # ---------------- 辨证报告 ----------------
 class EvidenceItem(BaseModel):
     source: str

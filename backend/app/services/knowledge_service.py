@@ -221,8 +221,17 @@ def _vector_query(embedding: list[float], label: Optional[str], top_k: int) -> l
         return []
 
 
+def _rrf(rank_list: list[int], k: int = 60) -> float:
+    """Reciprocal Rank Fusion：多通道独立 rank → 加权求和。
+
+    k=60 是 TREC 标准，避免第一名分数过高；两边证据平等贡献，
+    不硬编码"图谱优先"bias。
+    """
+    return sum(1.0 / (k + r) for r in rank_list)
+
+
 def graphrag_retrieve(symptoms: list[str], syndrome_hint: Optional[str], embedding: Optional[list[float]] = None) -> dict:
-    """融合图检索 + 向量检索（RRF），返回证型/方剂/中药/症状及可解释 graph_refs。"""
+    """Neo4j 图谱 + Milvus 向量独立 rank → RRF 融合，返回证型/方剂/中药/症状及可解释 graph_refs。"""
     result: dict[str, Any] = {
         "syndromes": [], "formulas": [], "herbs": [], "symptoms": list(symptoms),
         "symptom_matches": [],
@@ -231,8 +240,8 @@ def graphrag_retrieve(symptoms: list[str], syndrome_hint: Optional[str], embeddi
     if not _graph_available() and not _vector_available():
         return result
 
-    syndrome_rows: list[dict] = []
-    # 图检索：症状 -> 证型（沿 MANIFESTS）
+    # ── 通道 1：图谱检索（沿 MANIFESTS 按命中数排序，rank=hit 位置）
+    graph_syndromes: list[tuple[str, dict, int]] = []  # (name, props, hit)
     if symptoms and _graph_available():
         try:
             cypher = (
@@ -240,45 +249,68 @@ def graphrag_retrieve(symptoms: list[str], syndrome_hint: Optional[str], embeddi
                 "WHERE s.name IN $symptoms "
                 "WITH sy, count(s) AS hit "
                 "RETURN sy.name AS name, properties(sy) AS props, hit "
-                "ORDER BY hit DESC LIMIT 5"
+                "ORDER BY hit DESC LIMIT 10"
             )
-            syndrome_rows = neo4j_client.run_query(cypher, {"symptoms": symptoms})
+            graph_syndromes = [
+                (r["name"], r["props"], r["hit"])
+                for r in neo4j_client.run_query(cypher, {"symptoms": symptoms})
+                if r.get("name")
+            ]
         except Exception as e:  # noqa: BLE001
             logger.warning("graph retrieve syndromes failed: %s", e)
 
-    # 若指定证型名，直接命中
+    # 若指定证型名，直接命中（rank=1）
     if syndrome_hint and _graph_available():
         try:
             direct = neo4j_client.run_query(
                 "MATCH (sy:Syndrome) WHERE sy.name CONTAINS $h RETURN properties(sy) AS props LIMIT 3",
                 {"h": syndrome_hint},
             )
-            syndrome_rows.extend([{"name": r["props"].get("name", ""), "props": r["props"], "hit": 100} for r in direct])
+            for r in direct:
+                name = r["props"].get("name", "")
+                if name and not any(g[0] == name for g in graph_syndromes):
+                    graph_syndromes.append((name, r["props"], 999))
         except Exception as e:  # noqa: BLE001
             logger.warning("graph direct syndrome failed: %s", e)
 
-    # 去重并按命中排序
-    dedup: dict[str, dict] = {}
-    for r in syndrome_rows:
-        name = r["name"]
-        if name and name not in dedup:
-            dedup[name] = r
-    top_syndromes = [dedup[k] for k in list(dedup.keys())[:3]]
+    # ── 通道 2：向量检索（按 cosine 排序，rank=位置）
+    vector_syndromes: list[str] = []
+    if embedding is not None and _vector_available():
+        try:
+            vector_syndromes = [
+                h["node_id"] for h in _vector_query(embedding, label="Syndrome", top_k=10)
+                if h.get("node_id")
+            ]
+        except Exception as e:  # noqa: BLE001
+            logger.warning("vector retrieve syndromes failed: %s", e)
 
-    for s in top_syndromes:
-        props = s["props"]
-        result["syndromes"].append({"name": s["name"], "props": props})
+    # ── RRF 融合
+    rrf_scores: dict[str, float] = {}
+    # 图谱通道：按 hit 降序排 → rank=位置
+    graph_sorted = sorted(graph_syndromes, key=lambda x: -x[2])
+    for rank, (name, _props, _hit) in enumerate(graph_sorted, start=1):
+        rrf_scores[name] = rrf_scores.get(name, 0.0) + _rrf([rank])
+    # 向量通道：按返回顺序 → rank=位置
+    for rank, name in enumerate(vector_syndromes, start=1):
+        rrf_scores[name] = rrf_scores.get(name, 0.0) + _rrf([rank])
+
+    # 取 top3
+    top_names = sorted(rrf_scores.keys(), key=lambda n: -rrf_scores[n])[:3]
+
+    for name in top_names:
+        props = next((g[1] for g in graph_sorted if g[0] == name), {})
+        result["syndromes"].append({"name": name, "props": props})
         result["graph_refs"].append(GraphRef(
-            label="Syndrome", name=s["name"],
+            label="Syndrome", name=name,
             source=props.get("source", ""),
             description=props.get("definition", ""),
         ).model_dump())
-        # 沿 TREATS 反向取代表方，再沿 CONTAINS 取药
-        if _graph_available():
+        # 沿 TREATS 反向取代表方，再沿 CONTAINS 取药（只走图谱，不影响 RRF）
+        if _graph_available() and props:
             try:
                 formula_rows = neo4j_client.run_query(
                     "MATCH (f:Formula)-[:TREATS]->(sy:Syndrome {name:$n}) "
-                    "RETURN properties(f) AS props", {"n": s["name"]},
+                    "RETURN properties(f) AS props", {"n": name},
                 )
                 for fr in formula_rows[:3]:
                     fp = fr["props"]
@@ -299,10 +331,9 @@ def graphrag_retrieve(symptoms: list[str], syndrome_hint: Optional[str], embeddi
             except Exception as e:  # noqa: BLE001
                 logger.warning("graph formula expand failed: %s", e)
 
-    # 向量检索补充（若提供 embedding）
+    # 向量检索补充方剂/中药/症状（RRF 主要用于证型排序，其他类型继续补位）
     if embedding is not None and _vector_available():
-        # Retrieval candidates are knowledge, never additional patient symptoms.
-        for lab, key in [("Syndrome", "syndromes"), ("Formula", "formulas"), ("Herb", "herbs"), ("Symptom", "symptom_matches")]:
+        for lab, key in [("Formula", "formulas"), ("Herb", "herbs"), ("Symptom", "symptom_matches")]:
             hits = _vector_query(embedding, label=lab, top_k=3)
             for h in hits:
                 existing_names = {x["name"] for x in result[key] if "name" in x}

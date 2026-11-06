@@ -18,7 +18,7 @@ from app.models.entities import (
     TcmImage,
     ReportReview,
 )
-from app.schemas.schemas import SyndromeReport
+from app.schemas.schemas import SyndromeReport, InquiryResponse
 from app.services.inquiry_choices import build_choices
 from app.services import knowledge_service, prompt_service, safety_service, syndrome_service
 
@@ -224,26 +224,28 @@ def _load_slots_from_records(db: Session, session_id: int) -> dict:
 
 
 def _parse_inquiry_response(raw: str, slots: dict) -> tuple[str, dict, bool]:
-    """解析 LLM 完整输出 → (reply, new_slots, ready)。校验 schema，失败抛 ValueError。"""
+    """解析 LLM 完整输出 → (reply, new_slots, ready)。
+
+    流式 chunk 全部收齐后，必须过 Pydantic schema 校验。
+    字段缺失/类型不符抛 ValidationError，由上层捕获走规则降级。
+    """
+    from pydantic import ValidationError
     data = _parse_json(raw)
     if not isinstance(data, dict):
-        raise ValueError("invalid inquiry response")
-    extracted = data.get("slots", {})
-    if (
-        not isinstance(data.get("reply"), str)
-        or not isinstance(data.get("ready", False), bool)
-        or not isinstance(extracted, dict)
+        raise ValueError("invalid inquiry response (not a dict)")
+    try:
+        parsed = InquiryResponse.model_validate(data)
+    except ValidationError as e:
+        raise ValueError(f"inquiry response schema validation failed: {e.errors()}") from e
+    # 额外约束：symptoms 列表必须是 list[str]
+    extracted = parsed.slots
+    if "symptoms" in extracted and not (
+        isinstance(extracted["symptoms"], list)
+        and all(isinstance(x, str) for x in extracted["symptoms"])
     ):
-        raise ValueError("invalid inquiry response")
-    if "symptoms" in extracted and (
-        not isinstance(extracted["symptoms"], list)
-        or any(not isinstance(x, str) for x in extracted["symptoms"])
-    ):
-        raise ValueError("invalid symptom list")
-    reply = data.get("reply", "感谢您的补充，请继续描述您的其它不适。")
-    ready = bool(data.get("ready", False))
+        raise ValueError("invalid symptom list in slots")
     new_slots = {**slots, **extracted}
-    return reply, new_slots, ready
+    return parsed.reply, new_slots, parsed.ready
 
 
 def _build_inquiry_prompt(

@@ -155,8 +155,14 @@ def build_diagnosis_graph(
     retrieve: Callable[[dict], dict],
     differentiate: Callable[[dict], dict],
     recommend: Callable[[dict], dict],
+    checkpointer=None,
 ):
-    """构建 syndrome→care 的有界诊断图；节点函数由调用方注入以复用其模块级依赖。"""
+    """构建 syndrome→care 的有界诊断图；节点函数由调用方注入以复用其模块级依赖。
+
+    传入 checkpointer（如 langgraph.checkpoint.memory.MemorySaver）可实现状态持久化：
+    图中途抛异常（LLM timeout），下次同 thread_id 调用从断点恢复。
+    不传则退化为一次性执行（兼容旧调用）。
+    """
     g = StateGraph(DiagnosisState)
     g.add_node("retrieve", retrieve)
     g.add_node("differentiate", differentiate)
@@ -165,4 +171,5 @@ def build_diagnosis_graph(
     g.add_edge("retrieve", "differentiate")
     g.add_edge("differentiate", "recommend")
     g.add_edge("recommend", END)
-    return g.compile()
+    kwargs = {"checkpointer": checkpointer} if checkpointer is not None else {}
+    return g.compile(**kwargs)
