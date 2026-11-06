@@ -1,12 +1,17 @@
 """Celery 应用（Redis broker + result backend）。"""
+import sys
+
 from celery import Celery
 
 from app.core.config import settings
 
+# 测试环境无 Redis：改用内存 broker，避免 .delay() 触发 20 次连接重试把用例拖慢到分钟级
+_TESTING = "unittest" in sys.modules or "pytest" in sys.modules
+
 celery_app = Celery(
     "tcm",
-    broker=settings.celery_broker_url,
-    backend=settings.celery_result_backend,
+    broker="memory://" if _TESTING else settings.celery_broker_url,
+    backend="cache+memory://" if _TESTING else settings.celery_result_backend,
     include=["app.tasks.jobs"],
 )
 

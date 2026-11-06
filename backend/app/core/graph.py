@@ -102,10 +102,11 @@ class BoundedToolExecutor:
 
 
 class DiagnosisState(TypedDict, total=False):
-    """diagnosis 图共享状态：各节点读取前序节点写入的字段并在节点间传递。"""
+    """diagnosis 图共享状态：各节点读取前序节点写入的字段并在节点间传递。
 
-    # ── 上下文依赖（不进 Checkpointer）──
-    db: Any
+    注意：数据库会话（SQLAlchemy Session）不放在 state 里——它不可序列化，
+    放进来会让 Checkpointer 无法保存快照。节点通过 contextvar 获取当前请求的 db。
+    """
 
     # ── 问诊层 ──
     complaint: str

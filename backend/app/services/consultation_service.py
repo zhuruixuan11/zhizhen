@@ -24,10 +24,11 @@ from app.services import knowledge_service, prompt_service, safety_service, synd
 
 logger = logging.getLogger("app.consultation")
 
-# 触发"生成报告"意图的关键词——去掉"分析"这类宽泛词，避免正常追问被误触发
+# 触发"生成报告"意图的关键词——只保留意图明确的说法。
+# 已剔除："分析"、"辨证"（过于宽泛，正常追问会误触发）、"辨证结果"、"要报告"（口语中几乎不出现，留着只是噪音）
 _REPORT_KEYWORDS = [
     "生成报告", "出报告", "给我结果", "出结果",
-    "诊断一下", "看看结果", "辨证结果", "要报告",
+    "诊断一下", "看看结果",
 ]
 
 

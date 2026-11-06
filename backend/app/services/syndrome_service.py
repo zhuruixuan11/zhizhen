@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import time
+from contextvars import ContextVar
 from typing import Any, Optional
 
 from sqlalchemy.orm import Session
@@ -181,7 +182,7 @@ def _treatment_step(db: Session, syndrome: Optional[str], kg: dict) -> dict:
 
 
 def _retrieve_node(state: dict) -> dict:
-    db = state["db"]
+    db = _current_db()
     complaint = state.get("complaint", "")
     symptoms = state.get("symptoms", [])
     executor = graph.BoundedToolExecutor("syndrome").bind(
@@ -200,7 +201,7 @@ def _retrieve_node(state: dict) -> dict:
 def _differentiate_node(state: dict) -> dict:
     executor = graph.BoundedToolExecutor("syndrome").bind(differentiate=_syndrome_step)
     syndrome, evidence, differential, confidence = executor.call(
-        "differentiate", state["db"], state.get("complaint", ""),
+        "differentiate", _current_db(), state.get("complaint", ""),
         state.get("symptoms", []), state.get("recognitions", []), state.get("kg", {}),
         state.get("inquiry", {}), state.get("patient_messages", []),
     )
@@ -210,11 +211,22 @@ def _differentiate_node(state: dict) -> dict:
 
 def _recommend_node(state: dict) -> dict:
     executor = graph.BoundedToolExecutor("care").bind(recommend=_treatment_step)
-    treatment = executor.call("recommend", state["db"], state.get("syndrome"), state.get("kg", {}))
+    treatment = executor.call("recommend", _current_db(), state.get("syndrome"), state.get("kg", {}))
     return {"treatment": treatment or {}}
 
 
 _compiled = None
+
+# db 会话是请求级上下文，不可序列化，因此不进 LangGraph state（否则 Checkpointer 无法持久化）。
+# 图中节点通过此 ContextVar 取当前请求的 db，避免把 SQLAlchemy Session 塞进状态快照。
+_db_ctx: ContextVar[Any] = ContextVar("diagnosis_db", default=None)
+
+
+def _current_db():
+    db = _db_ctx.get()
+    if db is None:
+        raise RuntimeError("diagnosis db context is not set")
+    return db
 
 
 def _diagnosis_graph():
@@ -256,7 +268,7 @@ def analyze(db: Session, context: dict, complaint: str, runtime=None) -> dict:
     )
     graph_instance = _diagnosis_graph()
 
-    # state 构造：db 单独处理（SQLAlchemy session 不可序列化，不进 Checkpointer）
+    # state 构造：db 走 ContextVar，不进 state——Checkpointer 才能把状态快照序列化到内存/存储
     state: dict[str, Any] = {
         "complaint": complaint,
         "symptoms": symptoms,
@@ -265,30 +277,17 @@ def analyze(db: Session, context: dict, complaint: str, runtime=None) -> dict:
         "patient_messages": context.get("patient_messages", []),
         "risk": risk,
     }
-    state["db"] = db
 
     invoke_kwargs: dict[str, Any] = {}
     if getattr(graph_instance, "checkpointer", None) is not None:
         # MemorySaver 存在 → LangGraph 强制要求 thread_id
         invoke_kwargs["config"] = {"configurable": {"thread_id": str(session_id)}}
 
+    token = _db_ctx.set(db)
     try:
         final = graph_instance.invoke(state, **invoke_kwargs)
-    except TypeError as te:
-        # MemorySaver 序列化 state 里的 Mock/db 失败 → 降级：重建无 checkpointer 的 graph
-        if "msgpack serializable" in str(te).lower() or "serializable" in str(te).lower():
-            logger.warning("checkpointer serialization failed, fallback stateless graph: %s", te)
-            global _compiled
-            # 重建 graph（stateless）
-            _compiled = graph.build_diagnosis_graph(
-                retrieve=_retrieve_node, differentiate=_differentiate_node, recommend=_recommend_node,
-            )
-            final = _compiled.invoke(state)
-        else:
-            raise
-
-    # 确保 db 不泄漏回 state
-    final.pop("db", None)
+    finally:
+        _db_ctx.reset(token)
 
     syndrome = final.get("syndrome")
     kg = final.get("kg") or {}

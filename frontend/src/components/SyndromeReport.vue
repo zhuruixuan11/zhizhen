@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { SyndromeReport } from '@/types'
 import GraphRefCard from './GraphRefCard.vue'
+import KnowledgeGraphView from './KnowledgeGraphView.vue'
 import DisclaimerBar from './DisclaimerBar.vue'
+
+const showGraph = ref(false)
 
 const props = defineProps<{
   report: SyndromeReport
@@ -151,8 +154,14 @@ function weightPercent(weight: number): string {
       </section>
 
       <section v-if="report.graph_refs?.length" class="report-section">
-        <h3 class="section-title">知识图谱依据</h3>
-        <div class="graph-grid">
+        <div class="section-head">
+          <h3 class="section-title">知识图谱依据</h3>
+          <el-button link type="primary" size="small" @click="showGraph = !showGraph">
+            {{ showGraph ? '收起推导图' : '查看推导图' }}
+          </el-button>
+        </div>
+        <KnowledgeGraphView v-if="showGraph" :report="report" />
+        <div v-else class="graph-grid">
           <GraphRefCard
             v-for="(ref, i) in report.graph_refs"
             :key="i"
@@ -333,10 +342,23 @@ function weightPercent(weight: number): string {
   margin: 8px 0 0;
 }
 
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.section-head .section-title {
+  margin-bottom: 0;
+}
+
 .graph-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 14px;
+  margin-top: 12px;
 }
 
 .report-disclaimer {
