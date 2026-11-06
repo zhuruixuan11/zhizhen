@@ -5,7 +5,7 @@
     <img src="https://img.shields.io/badge/Python-3.11%2B-blue?logo=python" />
     <img src="https://img.shields.io/badge/FastAPI-0.110%2B-009688?logo=fastapi" />
     <img src="https://img.shields.io/badge/Vue-3-42b883?logo=vue" />
-    <img src="https://img.shields.io/badge/LangGraph-Agent-orange?logo=langchain" />
+    <img src="https://img.shields.io/badge/LangGraph-3--Node-orange?logo=langchain" />
     <img src="https://img.shields.io/badge/Milvus-Vector-179c3a" />
     <img src="https://img.shields.io/badge/Neo4j-Graph-4581c3?logo=neo4j" />
     <img src="https://img.shields.io/badge/Redis-PubSub-dc382d?logo=redis" />
@@ -15,21 +15,21 @@
 
 ---
 
-## ✨ 亮点 · 为什么是它
+## ✨ 亮点
 
-| 特性 | 说明 |
+| 特性 | 代码里的实现 |
 |---|---|
-| 🧠 **多智能体编排** | LangGraph StateGraph 驱动问诊→辨证→论治→审方四阶段流转，每阶段独立 Agent，可插拔、可回放 |
-| 📚 **GraphRAG 混合检索** | Milvus 向量 + Neo4j 证型-症状-治法图谱，RRF 融合排序，辨证有据可追溯 |
-| 🛡️ **安全护栏三层设计** | 输入护栏屏蔽 prompt injection · 输出护栏拦截确定性诊断/处方剂量 · 急危重症自动短路推送就医指南 |
-| 💬 **SSE 实时流式问诊** | 槽位驱动的追问链路，每轮仅问 1~2 个具体问题，渐进式收集四诊信息 |
-| 🧾 **长短时记忆系统** | agent_memory 表存储会话级槽位快照 + 跨会话健康画像，下次问诊自动参考历史 |
-| 👁️ **多模态望诊** | DashScope 视觉模型识别舌象/面色，置信度低时主动说明不确定之处，不强行推断 |
-| 👨‍⚕️ **医患双端 + 人工审核** | 患者提交报告草稿 → Redis pub/sub 实时推送给医生 → 医生审核确认后回传患者 |
-| 🔗 **分享链接** | HMAC 签名 + 时效 token，生成后可直接发给亲友/医生查看，无需登录 |
-| 📤 **报告导出** | PDF / JSON 一键下载，weasyprint 不可用时自动降级，无外部依赖也能用 |
-| 📊 **完整可观测性** | Prometheus + Grafana 仪表盘 + OpenTelemetry 全链路 Trace + LangSmith LLM 调用追踪 |
-| 🔧 **企业级工程化** | Alembic 迁移 + AES-256-GCM 字段加密 + prompt 版本化热更新 + Session 超时自动清理 |
+| 🧠 **LangGraph 三节点 StateGraph** | `retrieve → differentiate → recommend`，`DiagnosisState` TypedDict，链路可回放、可插拔。问诊和审方在图外骨架层 |
+| 📚 **Neo4j 图谱定证型 + Milvus 向量补位** | 图检索沿 `MANIFESTS` 关系按症状命中数排序取 top5，名称去重后取 top3 证型；向量 `top_k=3` 仅补图检索未覆盖的节点，最终再次去重。两套通道互补、不相互加权 |
+| 🛡️ **三层安全护栏** | `safety_service.check_input` 屏蔽 prompt injection / 非医疗内容；`safety_service.check_output` 拦截确定性诊断措辞、处方剂量；急危重症（胸痛/呼吸困难/意识障碍/自伤倾向）由 `consultation_service._handle_emergency` 短路，直接返回急救指南、终止问诊 |
+| 💬 **SSE 流式问诊 + 槽位驱动** | 后端用 `StreamingResponse` 以 `text/event-stream` 逐 chunk yield，前端用 `fetch + ReadableStream` 消费；每轮 LLM 回复按槽位追问 1~2 个具体问题，渐进式收集四诊信息 |
+| 🧾 **长短时记忆** | `agent_memory` 表分短（本次会话槽位快照）长（跨会话健康画像）两层，下次问诊从 DB 恢复槽位，画像在每次辨证落库后由 Celery 异步重算 |
+| 👁️ **多模态望诊** | DashScope 视觉模型识别舌象/面色，`vision_service` 对低置信度结果返回结构化 `uncertain: true`，不强行推断 |
+| 👨‍⚕️ **医患双端 + 人工审核** | 患者提交报告草稿 → 辨证落库后 `notification_service.publish_case_new` 经 Redis pub/sub 发布 → 医生端订阅 `/api/v1/notify/stream` SSE 实时收到 |
+| 🔗 **HMAC 签名分享链接** | `share_service` 用 `hashlib.sha256` 生成带过期时间的签名 token，公开端点 `/api/v1/consultation/public/share/{token}` 无需登录、7 天过期自动拒绝 |
+| 📤 **报告导出 PDF / JSON** | `export_service` 优先用 `weasyprint` 渲染 PDF，未安装时自动降级 JSON 下载，带 `X-Export-Warning` 响应头，无外部依赖也能用 |
+| 📊 **可观测性** | `observability/` 目录含 Prometheus alerts + Grafana dashboards；`main.py` 埋 `prometheus_client` metrics；Celery 任务挂 LangSmith traces |
+| 🔧 **企业级工程化** | `AES-256-GCM` 字段加密（`core.security.encrypt_field`）；`prompt_version` 表热更新 system prompt（`prompt_service` 含 `inquiry_system` scene）；Celery beat 每 30 分钟清理 24h 未活跃的 ongoing 会话 |
 
 ---
 
@@ -46,9 +46,9 @@
 ├── backend/               FastAPI + SQLAlchemy + Celery
 │   └── app/
 │       ├── api/           auth · consultation · notifications · admin · knowledge
-│       ├── core/          graph(LangGraph) · llm · milvus · neo4j · redis · security
-│       ├── services/      consultation · syndrome · safety · share · export · notification
-│       ├── tasks/         Celery beat: session 超时清理 · 用户画像重算 · memory 过期
+│       ├── core/          graph(LangGraph 3-node) · llm · milvus · neo4j · redis · security
+│       ├── services/      consultation · knowledge · safety · share · export · notification
+│       ├── tasks/         Celery beat: session 超时清理 · 用户画像重算
 │       └── models/        User · ConsultationSession · ConsultationRecord
 │                          SyndromeAnalysis · ReportReview · AgentMemory · PromptVersion
 │
@@ -61,16 +61,19 @@
 ### 核心数据流
 
 ```
-用户输入 ──▶ [输入护栏] ──▶ LangGraph StateGraph
+用户输入 ──▶ [输入护栏] ──▶ 问诊骨架层（consultation_service._chat_turn）
                                 │
-                    ┌───────────┼───────────┐
-                    ▼           ▼           ▼
-              问诊 Agent    辨证 Agent    论治 Agent
-              (槽位追问)   (GraphRAG)    (方剂+食疗)
-                    │           │           │
-                    └───────────┼───────────┘
+                    流式槽位追问（LangGraph 外）
+                                │
                                 ▼
-                        [输出护栏] ──▶ SyndromeAnalysis 落库
+                        [输出护栏]
+                                │
+                                ▼
+                LangGraph StateGraph（3 节点）
+                    retrieve → differentiate → recommend
+                                │
+                                ▼
+                        SyndromeAnalysis 落库
                                 │
                 ┌───────────────┴───────────────┐
                 ▼                               ▼
@@ -85,7 +88,7 @@
 ### 后端
 - **语言**：Python 3.11+
 - **框架**：FastAPI 0.110+ · SQLAlchemy 2.0 · Pydantic v2
-- **Agent 编排**：LangGraph StateGraph
+- **Agent 编排**：LangGraph StateGraph（3 节点 `retrieve → differentiate → recommend`）
 - **向量检索**：Milvus (pymilvus)
 - **图谱检索**：Neo4j (neo4j driver)
 - **缓存 & Pub/Sub**：Redis (redis-py, aioredis)
@@ -100,10 +103,11 @@
 - **UI**：Element Plus
 - **状态**：Pinia
 - **构建**：Vite 5
+- **流式消费**：`fetch + ReadableStream`（text/event-stream）
 
 ### 部署
 - Docker Compose 一键起全套
-- 预置 Nginx 反向代理 + CORS + WebSocket 升级
+- 预置 Nginx 反向代理 + CORS
 - Celery worker 与 beat 独立容器
 
 ---
@@ -130,8 +134,7 @@ docker compose up -d --build
 
 # 4. 打开浏览器
 open http://localhost
-# 默认管理员：admin / admin123
-# 默认医生：dr_zhang / doctor123（种子数据）
+# 管理员账号由 ADMIN_USERNAME / ADMIN_PASSWORD 环境变量控制，未设置时默认 admin / admin123
 ```
 
 ### 开发模式（前后端分离）
@@ -154,8 +157,8 @@ npm run dev -- --port 5174
 
 ```bash
 cd backend
-pytest tests/ -v --tb=short
-# 预期：53 passed, 3 skipped（跳过项为可选依赖/环境预置）
+python -m unittest discover -s tests -v
+# 16 个测试文件，61 个测试方法
 ```
 
 ---
@@ -170,7 +173,7 @@ pytest tests/ -v --tb=short
 | 字段加密 | `core.security.encrypt_field` | 敏感数据（医生证号、患者画像）AES-256-GCM 加密落库 |
 | API 鉴权 | `api.deps.get_current_user` | JWT access token + role-based 权限拦截 |
 | 分享链接 | `services.share_service` | HMAC-SHA256 签名 + 时效控制，伪造/篡改/过期均拒绝 |
-| 外部依赖降级 | 全局 | Redis/Celery/weasyprint 任一不可用时主链路不中断，日志 warning 即可 |
+| 外部依赖降级 | 全局 | Redis pub/sub / Celery worker / weasyprint 任一不可用时主链路不中断，日志 warning 即可 |
 
 ---
 
@@ -178,14 +181,15 @@ pytest tests/ -v --tb=short
 
 | 模块 | 文件 | 职责 |
 |---|---|---|
-| 多智能体编排 | `backend/app/core/graph.py` | LangGraph `StateGraph` + `DiagnosisState` TypedDict |
-| 问诊主链路 | `backend/app/services/consultation_service.py` | 流式问诊骨架 + 安全护栏 + 辨证落库（401 行 → 骨架+8 职责函数） |
-| GraphRAG 检索 | `backend/app/services/syndrome_service.py` | Milvus 向量 + Neo4j 图谱 + RRF 融合 |
-| 系统提示词 | `backend/app/services/prompt_service.py` | `prompt_version` 表热更新，含 `inquiry_system` scene |
-| 分享链接 | `backend/app/services/share_service.py` | HMAC 签名 token + /consultation/public/share/{token} 公开端点 |
-| 实时通知 | `backend/app/services/notification_service.py` + `api/notifications.py` | Redis pub/sub + SSE `/notify/stream` |
-| PDF 导出 | `backend/app/services/export_service.py` | weasyprint + 自动降级 JSON |
-| 用户画像 | `backend/app/tasks/jobs.py::rebuild_user_profile` | Celery 异步，扫历史报告算证型趋势 + 季节性 |
+| LangGraph 三节点编排 | `backend/app/core/graph.py` | `StateGraph(retrieve → differentiate → recommend)` + `DiagnosisState` TypedDict |
+| 问诊主链路 | `backend/app/services/consultation_service.py` | 流式问诊骨架（`_chat_turn` 105 行）+ 安全护栏 + 辨证落库 |
+| 图谱优先 + 向量补位 | `backend/app/services/knowledge_service.py::graphrag_retrieve` | Neo4j `MANIFESTS` 命中数排序取 top3 证型；Milvus `top_k=3` 补位；名称去重 |
+| 系统提示词热更新 | `backend/app/services/prompt_service.py` | `prompt_version` 表驱动，含 `inquiry_system` scene |
+| 分享链接 | `backend/app/services/share_service.py` | HMAC-SHA256 签名 token + `/consultation/public/share/{token}` 公开端点 |
+| 医生端 SSE 通知 | `backend/app/services/notification_service.py` + `api/notifications.py` | Redis pub/sub + `/notify/stream` |
+| 报告导出 | `backend/app/services/export_service.py` | weasyprint PDF + 自动降级 JSON |
+| 用户画像异步重算 | `backend/app/tasks/jobs.py::rebuild_user_profile` | Celery beat + 事件触发，扫历史报告算证型趋势 |
+| Session 超时清理 | `backend/app/tasks/jobs.py::close_stale_sessions` | Celery beat 每 30 分钟扫 24h 未活跃 ongoing 会话 |
 
 ---
 
