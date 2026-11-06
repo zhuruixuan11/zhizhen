@@ -30,7 +30,7 @@
 | 🕸️ **辨证推导图（前端）** | 报告页「查看推导图」把 `evidence / syndrome / formula_suggestions` 渲染成 SVG 三列链路（依据 → 证型 → 方剂），节点可点击跳转知识库；纯手写 SVG，无第三方图库依赖 |
 | 📤 **报告导出 PDF / JSON** | `export_service` 优先用 `weasyprint` 渲染 PDF，未安装时自动降级 JSON 下载，带 `X-Export-Warning` 响应头，无外部依赖也能用 |
 | 📊 **可观测性** | `observability/` 目录含 Prometheus alerts + Grafana dashboards；`main.py` 埋 `prometheus_client` metrics；Celery 任务挂 LangSmith traces |
-| 🔧 **企业级工程化** | `AES-256-GCM` 字段加密（`core.security.encrypt_field`）；`prompt_version` 表热更新 system prompt（`prompt_service` 含 `inquiry_system` scene）；Celery beat 每 30 分钟清理 24h 未活跃的 ongoing 会话 |
+| 🔧 **企业级工程化** | `AES-256-GCM` 字段加密（`core.security.encrypt_plaintext` / `decrypt_plaintext` / `encrypt_dict_fields`）；`prompt_version` 表热更新 system prompt（`prompt_service` 含 `inquiry_system` scene）；Celery beat 每 30 分钟清理 24h 未活跃的 ongoing 会话 |
 
 ---
 
@@ -172,7 +172,7 @@ python -m unittest discover -s tests -v
 | 输入护栏 | `safety_service.check_input` | 屏蔽 prompt injection（"忽略之前的指令"等）、非医疗内容 |
 | 输出护栏 | `safety_service.check_output` | 拦截确定性诊断措辞、处方剂量、诱导越权 |
 | 急危重症短路 | `consultation_service._handle_emergency` | 识别胸痛/呼吸困难/意识障碍/自伤倾向 → 立即返回急救指南，终止问诊 |
-| 字段加密 | `core.security.encrypt_field` | 敏感数据（医生证号、患者画像）AES-256-GCM 加密落库 |
+| 字段加密 | `core.security.encrypt_plaintext` / `decrypt_plaintext` / `encrypt_dict_fields` | 敏感数据（医生证号、患者画像）AES-256-GCM 加密落库 |
 | API 鉴权 | `api.deps.get_current_user` | JWT access token + role-based 权限拦截 |
 | 分享链接 | `services.share_service` | HMAC-SHA256 签名 + 时效控制，伪造/篡改/过期均拒绝 |
 | 外部依赖降级 | 全局 | Redis pub/sub / Celery worker / weasyprint 任一不可用时主链路不中断，日志 warning 即可 |
