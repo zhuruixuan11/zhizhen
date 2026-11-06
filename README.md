@@ -27,6 +27,7 @@
 | 👁️ **多模态望诊** | DashScope 视觉模型识别舌象/面色，`vision_service` 对低置信度结果返回结构化 `uncertain: true`，不强行推断 |
 | 👨‍⚕️ **医患双端 + 人工审核** | 患者提交报告草稿 → 辨证落库后 `notification_service.publish_case_new` 经 Redis pub/sub 发布 → 医生端订阅 `/api/v1/notify/stream` SSE 实时收到 |
 | 🔗 **HMAC 签名分享链接** | `share_service` 用 `hashlib.sha256` 生成带过期时间的签名 token，公开端点 `/api/v1/consultation/public/share/{token}` 无需登录、7 天过期自动拒绝 |
+| 🕸️ **辨证推导图（前端）** | 报告页「查看推导图」把 `evidence / syndrome / formula_suggestions` 渲染成 SVG 三列链路（依据 → 证型 → 方剂），节点可点击跳转知识库；纯手写 SVG，无第三方图库依赖 |
 | 📤 **报告导出 PDF / JSON** | `export_service` 优先用 `weasyprint` 渲染 PDF，未安装时自动降级 JSON 下载，带 `X-Export-Warning` 响应头，无外部依赖也能用 |
 | 📊 **可观测性** | `observability/` 目录含 Prometheus alerts + Grafana dashboards；`main.py` 埋 `prometheus_client` metrics；Celery 任务挂 LangSmith traces |
 | 🔧 **企业级工程化** | `AES-256-GCM` 字段加密（`core.security.encrypt_field`）；`prompt_version` 表热更新 system prompt（`prompt_service` 含 `inquiry_system` scene）；Celery beat 每 30 分钟清理 24h 未活跃的 ongoing 会话 |
